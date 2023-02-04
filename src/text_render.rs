@@ -256,7 +256,7 @@ impl TextRenderer {
                     let details = atlas.glyph(&glyph.cache_key).unwrap();
 
                     let mut x = glyph.x_int + details.left as i32 + text_area.left;
-                    let mut y = line_y + glyph.y_int - details.top as i32 + text_area.top;
+                    let mut y = line_y as i32 + glyph.y_int - details.top as i32 + text_area.top;
 
                     let (mut atlas_x, mut atlas_y, content_type) = match details.gpu_cache {
                         GpuCacheStatus::InAtlas { x, y, content_type } => (x, y, content_type),
