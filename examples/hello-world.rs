@@ -52,7 +52,7 @@ async fn run() {
         .unwrap();
     let surface = unsafe { instance.create_surface(&window) };
     // TODO: handle srgb
-    let swapchain_format = TextureFormat::Bgra8Unorm;
+    let swapchain_format = TextureFormat::Bgra8UnormSrgb;
     let mut config = SurfaceConfiguration {
         usage: TextureUsages::RENDER_ATTACHMENT,
         format: swapchain_format,
@@ -72,13 +72,13 @@ async fn run() {
     let mut atlas = TextAtlas::new(&device, &queue, swapchain_format);
     let mut buffer = Buffer::new(
         unsafe { FONT_SYSTEM.as_ref().unwrap() },
-        Metrics::new(30, 42),
+        Metrics::new(30.0, 42.0),
     );
 
-    let physical_width = (width as f64 * scale_factor) as i32;
-    let physical_height = (height as f64 * scale_factor) as i32;
+    let physical_width = width as f64 * scale_factor;
+    let physical_height = height as f64 * scale_factor;
 
-    buffer.set_size(physical_width, physical_height);
+    buffer.set_size(physical_width as f32, physical_height as f32);
     buffer.set_text("Hello world! 👋\nThis is rendered with 🦅 glyphon 🦁\nThe text below should be partially clipped.\na b c d e f g h i j k l m n o p q r s t u v w x y z", Attrs::new().family(Family::SansSerif));
     buffer.shape_until_scroll();
 
