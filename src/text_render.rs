@@ -59,7 +59,7 @@ impl TextRenderer {
         queue: &Queue,
         atlas: &mut TextAtlas,
         screen_resolution: Resolution,
-        text_areas: &[TextArea<'a, 'b>],
+        text_areas: impl Iterator<Item = TextArea<'a, 'b>> + Clone,
         default_color: Color,
         cache: &mut SwashCache,
     ) -> Result<(), PrepareError> {
@@ -96,7 +96,7 @@ impl TextRenderer {
 
         self.glyphs_in_use.clear();
 
-        for text_area in text_areas.iter() {
+        for text_area in text_areas.clone() {
             for run in text_area.buffer.layout_runs() {
                 for glyph in run.glyphs.iter() {
                     self.glyphs_in_use.insert(glyph.cache_key);
@@ -241,7 +241,7 @@ impl TextRenderer {
         let mut glyph_indices: Vec<u32> = Vec::new();
         let mut glyphs_added = 0;
 
-        for text_area in text_areas.iter() {
+        for text_area in text_areas {
             // Note: subpixel positioning is not currently handled, so we always truncate down to
             // the nearest pixel whenever necessary.
             for run in text_area.buffer.layout_runs() {

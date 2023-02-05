@@ -15,7 +15,7 @@ lru = "0.9"
 [dependencies.cosmic-text]
 features = ["std", "swash"]
 git = "https://github.com/hecrj/cosmic-text"
-rev = "483d66cca96edc21d044ba45d8246ce9656a2af6"
+rev = "dc83efbf00a2efb4118403538e8a47bfd69c3e5e"
 
 [dev-dependencies]
 winit = "0.27.0"

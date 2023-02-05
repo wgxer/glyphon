@@ -106,7 +106,7 @@ async fn run() {
                             width: config.width,
                             height: config.height,
                         },
-                        &[TextArea {
+                        [TextArea {
                             buffer: &buffer,
                             left: 10,
                             top: 10,
@@ -116,7 +116,8 @@ async fn run() {
                                 right: 600,
                                 bottom: 160,
                             },
-                        }],
+                        }]
+                        .into_iter(),
                         Color::rgb(255, 255, 255),
                         &mut cache,
                     )
