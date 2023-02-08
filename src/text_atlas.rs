@@ -75,20 +75,27 @@ impl InnerAtlas {
 
         loop {
             let allocation = self.packer.allocate(size);
+
             if allocation.is_some() {
                 return allocation;
             }
 
             // Try to free least recently used allocation
-            let (key, _) = self.glyph_cache.peek_lru()?;
+            let (_, mut value) = self.glyph_cache.peek_lru()?;
 
-            if self.glyphs_in_use.contains(key) {
+            while value.atlas_id.is_none() {
+                let _ = self.glyph_cache.pop_lru();
+
+                (_, value) = self.glyph_cache.peek_lru()?;
+            }
+
+            let (key, value) = self.glyph_cache.pop_lru().unwrap();
+
+            if self.glyphs_in_use.contains(&key) {
                 return None;
             }
 
-            let (_, value) = self.glyph_cache.pop_lru().unwrap();
-            self.packer
-                .deallocate(value.atlas_id.expect("cache corrupt"));
+            self.packer.deallocate(value.atlas_id.unwrap());
         }
     }
 
