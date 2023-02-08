@@ -1,15 +1,16 @@
 use crate::{text_render::ContentType, CacheKey, GlyphDetails, GlyphToRender, Params, Resolution};
 use etagere::{size2, Allocation, BucketedAtlasAllocator};
 use lru::LruCache;
-use std::{borrow::Cow, mem::size_of, num::NonZeroU64, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, mem::size_of, num::NonZeroU64, sync::Arc};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry, BindingResource,
-    BindingType, BlendState, Buffer, BufferBindingType, BufferDescriptor, BufferUsages,
-    ColorTargetState, ColorWrites, Device, Extent3d, FilterMode, FragmentState, MultisampleState,
-    PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor,
-    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
-    Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureView, TextureViewDescriptor, TextureViewDimension, VertexFormat, VertexState,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry,
+    BindingResource, BindingType, BlendState, Buffer, BufferBindingType, BufferDescriptor,
+    BufferUsages, ColorTargetState, ColorWrites, Device, Extent3d, FilterMode, FragmentState,
+    MultisampleState, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline,
+    RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, Texture, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
+    TextureViewDescriptor, TextureViewDimension, VertexFormat, VertexState,
 };
 
 #[allow(dead_code)]
@@ -17,26 +18,28 @@ pub(crate) struct InnerAtlas {
     pub texture: Texture,
     pub texture_view: TextureView,
     pub packer: BucketedAtlasAllocator,
-    pub width: u32,
-    pub height: u32,
+    pub size: u32,
     pub glyph_cache: LruCache<CacheKey, GlyphDetails>,
+    pub glyphs_in_use: HashSet<CacheKey>,
     pub num_atlas_channels: usize,
+    pub max_texture_dimension_2d: u32,
 }
 
 impl InnerAtlas {
+    const INITIAL_SIZE: u32 = 256;
+
     fn new(device: &Device, _queue: &Queue, num_atlas_channels: usize) -> Self {
         let max_texture_dimension_2d = device.limits().max_texture_dimension_2d;
-        let width = max_texture_dimension_2d;
-        let height = max_texture_dimension_2d;
+        let size = Self::INITIAL_SIZE.min(max_texture_dimension_2d);
 
-        let packer = BucketedAtlasAllocator::new(size2(width as i32, height as i32));
+        let packer = BucketedAtlasAllocator::new(size2(size as i32, size as i32));
 
         // Create a texture to use for our atlas
         let texture = device.create_texture(&TextureDescriptor {
             label: Some("glyphon atlas"),
             size: Extent3d {
-                width,
-                height,
+                width: size,
+                height: size,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -53,15 +56,17 @@ impl InnerAtlas {
         let texture_view = texture.create_view(&TextureViewDescriptor::default());
 
         let glyph_cache = LruCache::unbounded();
+        let glyphs_in_use = HashSet::new();
 
         Self {
             texture,
             texture_view,
             packer,
-            width,
-            height,
+            size,
             glyph_cache,
+            glyphs_in_use,
             num_atlas_channels,
+            max_texture_dimension_2d,
         }
     }
 
@@ -75,10 +80,68 @@ impl InnerAtlas {
             }
 
             // Try to free least recently used allocation
-            let (_, value) = self.glyph_cache.pop_lru()?;
+            let (key, _) = self.glyph_cache.peek_lru()?;
+
+            if self.glyphs_in_use.contains(key) {
+                return None;
+            }
+
+            let (_, value) = self.glyph_cache.pop_lru().unwrap();
             self.packer
                 .deallocate(value.atlas_id.expect("cache corrupt"));
         }
+    }
+
+    pub(crate) fn promote(&mut self, glyph: CacheKey) {
+        self.glyph_cache.promote(&glyph);
+        self.glyphs_in_use.insert(glyph);
+    }
+
+    pub(crate) fn put(&mut self, glyph: CacheKey, details: GlyphDetails) {
+        self.glyph_cache.put(glyph, details);
+        self.glyphs_in_use.insert(glyph);
+    }
+
+    pub(crate) fn grow(&mut self, device: &wgpu::Device) -> bool {
+        if self.size >= self.max_texture_dimension_2d {
+            return false;
+        }
+
+        // TODO: Better resizing logic (?)
+        let new_size = (self.size + Self::INITIAL_SIZE).min(self.max_texture_dimension_2d);
+
+        self.packer = BucketedAtlasAllocator::new(size2(new_size as i32, new_size as i32));
+
+        // Create a texture to use for our atlas
+        self.texture = device.create_texture(&TextureDescriptor {
+            label: Some("glyphon atlas"),
+            size: Extent3d {
+                width: new_size,
+                height: new_size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: match self.num_atlas_channels {
+                1 => TextureFormat::R8Unorm,
+                4 => TextureFormat::Rgba8UnormSrgb,
+                _ => panic!("unexpected number of channels"),
+            },
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        });
+
+        self.texture_view = self.texture.create_view(&TextureViewDescriptor::default());
+        self.size = new_size;
+
+        self.glyph_cache.clear();
+        self.glyphs_in_use.clear();
+
+        true
+    }
+
+    fn trim(&mut self) {
+        self.glyphs_in_use.clear();
     }
 }
 
@@ -88,6 +151,8 @@ pub struct TextAtlas {
     pub(crate) params_buffer: Buffer,
     pub(crate) pipeline: Arc<RenderPipeline>,
     pub(crate) bind_group: Arc<BindGroup>,
+    pub(crate) bind_group_layout: BindGroupLayout,
+    pub(crate) sampler: Sampler,
     pub(crate) color_atlas: InnerAtlas,
     pub(crate) mask_atlas: InnerAtlas,
 }
@@ -264,13 +329,30 @@ impl TextAtlas {
             params_buffer,
             pipeline,
             bind_group,
+            bind_group_layout,
+            sampler,
             color_atlas,
             mask_atlas,
         }
     }
 
-    pub(crate) fn contains_cached_glyph(&self, glyph: &CacheKey) -> bool {
-        self.mask_atlas.glyph_cache.contains(glyph) || self.color_atlas.glyph_cache.contains(glyph)
+    pub fn trim(&mut self) {
+        self.mask_atlas.trim();
+        self.color_atlas.trim();
+    }
+
+    pub fn grow(&mut self, device: &wgpu::Device, content_type: ContentType) -> bool {
+        let did_grow = match content_type {
+            ContentType::Mask => self.mask_atlas.grow(device),
+            ContentType::Color => self.color_atlas.grow(device),
+        };
+
+        if did_grow {
+            self.rebind(device);
+            true
+        } else {
+            false
+        }
     }
 
     pub(crate) fn glyph(&self, glyph: &CacheKey) -> Option<&GlyphDetails> {
@@ -285,5 +367,30 @@ impl TextAtlas {
             ContentType::Color => &mut self.color_atlas,
             ContentType::Mask => &mut self.mask_atlas,
         }
+    }
+
+    fn rebind(&mut self, device: &wgpu::Device) {
+        self.bind_group = Arc::new(device.create_bind_group(&BindGroupDescriptor {
+            layout: &self.bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: self.params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&self.color_atlas.texture_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.mask_atlas.texture_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::Sampler(&self.sampler),
+                },
+            ],
+            label: Some("glyphon bind group"),
+        }));
     }
 }
