@@ -1,6 +1,6 @@
 use crate::{
-    Color, GlyphDetails, GlyphToRender, GpuCacheStatus, Params, PrepareError, RenderError,
-    Resolution, SwashCache, SwashContent, TextArea, TextAtlas,
+    GlyphDetails, GlyphToRender, GpuCacheStatus, Params, PrepareError, RenderError, Resolution,
+    SwashCache, SwashContent, TextArea, TextAtlas,
 };
 use std::{iter, mem::size_of, num::NonZeroU32, slice};
 use wgpu::{
@@ -58,7 +58,6 @@ impl TextRenderer {
         atlas: &mut TextAtlas,
         screen_resolution: Resolution,
         text_areas: impl Iterator<Item = TextArea<'a, 'b>> + Clone,
-        default_color: Color,
         cache: &mut SwashCache,
     ) -> Result<(), PrepareError> {
         self.screen_resolution = screen_resolution;
@@ -184,7 +183,7 @@ impl TextRenderer {
                 for glyph in run.glyphs.iter() {
                     let color = match glyph.color_opt {
                         Some(some) => some,
-                        None => default_color,
+                        None => text_area.default_color,
                     };
 
                     let details = atlas.glyph(&glyph.cache_key).unwrap();
