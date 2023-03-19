@@ -1,6 +1,6 @@
 use crate::{
-    GlyphDetails, GlyphToRender, GpuCacheStatus, Params, PrepareError, RenderError, Resolution,
-    SwashCache, SwashContent, TextArea, TextAtlas,
+    FontSystem, GlyphDetails, GlyphToRender, GpuCacheStatus, Params, PrepareError, RenderError,
+    Resolution, SwashCache, SwashContent, TextArea, TextAtlas,
 };
 use std::{iter, mem::size_of, num::NonZeroU32, slice};
 use wgpu::{
@@ -51,13 +51,14 @@ impl TextRenderer {
     }
 
     /// Prepares all of the provided text areas for rendering.
-    pub fn prepare<'a, 'b: 'a>(
+    pub fn prepare<'a>(
         &mut self,
         device: &Device,
         queue: &Queue,
+        font_system: &mut FontSystem,
         atlas: &mut TextAtlas,
         screen_resolution: Resolution,
-        text_areas: impl Iterator<Item = TextArea<'a, 'b>> + Clone,
+        text_areas: impl Iterator<Item = TextArea<'a>> + Clone,
         cache: &mut SwashCache,
     ) -> Result<(), PrepareError> {
         self.screen_resolution = screen_resolution;
@@ -87,7 +88,9 @@ impl TextRenderer {
                         continue;
                     }
 
-                    let image = cache.get_image_uncached(glyph.cache_key).unwrap();
+                    let image = cache
+                        .get_image_uncached(font_system, glyph.cache_key)
+                        .unwrap();
 
                     let content_type = match image.content {
                         SwashContent::Color => ContentType::Color,
