@@ -3,14 +3,14 @@ use etagere::{size2, Allocation, BucketedAtlasAllocator};
 use lru::LruCache;
 use std::{borrow::Cow, mem::size_of, num::NonZeroU64, sync::Arc};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry, BindingResource,
-    BindingType, BlendState, Buffer, BufferBindingType, BufferDescriptor, BufferUsages,
-    ColorTargetState, ColorWrites, DepthStencilState, Device, Extent3d, FilterMode, FragmentState,
-    MultisampleState, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue,
-    RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModule,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, Texture, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
-    TextureViewDescriptor, TextureViewDimension, VertexFormat, VertexState,
+    BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType,
+    BlendState, Buffer, BufferBindingType, BufferDescriptor, BufferUsages, ColorTargetState,
+    ColorWrites, DepthStencilState, Device, Extent3d, FilterMode, FragmentState, MultisampleState,
+    PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipelineDescriptor,
+    SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderModuleDescriptor, ShaderSource,
+    ShaderStages, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
+    TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexFormat,
+    VertexState,
 };
 
 pub(crate) struct InnerAtlas {
@@ -50,6 +50,7 @@ impl InnerAtlas {
                 _ => panic!("unexpected number of channels"),
             },
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
         });
 
         let texture_view = texture.create_view(&TextureViewDescriptor::default());
@@ -92,9 +93,9 @@ pub struct TextAtlas {
     pub(crate) cached_pipelines: Vec<(
         MultisampleState,
         Option<DepthStencilState>,
-        Arc<RenderPipeline>,
+        Arc<bevy_render::render_resource::RenderPipeline>,
     )>,
-    pub(crate) bind_group: Arc<BindGroup>,
+    pub(crate) bind_group: Arc<bevy_render::render_resource::BindGroup>,
     pub(crate) color_atlas: InnerAtlas,
     pub(crate) mask_atlas: InnerAtlas,
     pub(crate) pipeline_layout: PipelineLayout,
@@ -219,28 +220,30 @@ impl TextAtlas {
         let color_atlas = InnerAtlas::new(device, queue, 4);
         let mask_atlas = InnerAtlas::new(device, queue, 1);
 
-        let bind_group = Arc::new(device.create_bind_group(&BindGroupDescriptor {
-            layout: &bind_group_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: params_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::TextureView(&color_atlas.texture_view),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::TextureView(&mask_atlas.texture_view),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: BindingResource::Sampler(&sampler),
-                },
-            ],
-            label: Some("glyphon bind group"),
-        }));
+        let bind_group = Arc::new(bevy_render::render_resource::BindGroup::from(
+            device.create_bind_group(&BindGroupDescriptor {
+                layout: &bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: params_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::TextureView(&color_atlas.texture_view),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureView(&mask_atlas.texture_view),
+                    },
+                    BindGroupEntry {
+                        binding: 3,
+                        resource: BindingResource::Sampler(&sampler),
+                    },
+                ],
+                label: Some("glyphon bind group"),
+            }),
+        ));
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
@@ -292,34 +295,36 @@ impl TextAtlas {
         device: &Device,
         multisample: MultisampleState,
         depth_stencil: Option<DepthStencilState>,
-    ) -> Arc<RenderPipeline> {
+    ) -> Arc<bevy_render::render_resource::RenderPipeline> {
         self.cached_pipelines
             .iter()
             .find(|(ms, ds, _)| ms == &multisample && ds == &depth_stencil)
             .map(|(_, _, p)| Arc::clone(p))
             .unwrap_or_else(|| {
-                let pipeline = Arc::new(device.create_render_pipeline(&RenderPipelineDescriptor {
-                    label: Some("glyphon pipeline"),
-                    layout: Some(&self.pipeline_layout),
-                    vertex: VertexState {
-                        module: &self.shader,
-                        entry_point: "vs_main",
-                        buffers: &self.vertex_buffers,
-                    },
-                    fragment: Some(FragmentState {
-                        module: &self.shader,
-                        entry_point: "fs_main",
-                        targets: &[Some(ColorTargetState {
-                            format: self.format,
-                            blend: Some(BlendState::ALPHA_BLENDING),
-                            write_mask: ColorWrites::default(),
-                        })],
+                let pipeline = Arc::new(bevy_render::render_resource::RenderPipeline::from(
+                    device.create_render_pipeline(&RenderPipelineDescriptor {
+                        label: Some("glyphon pipeline"),
+                        layout: Some(&self.pipeline_layout),
+                        vertex: VertexState {
+                            module: &self.shader,
+                            entry_point: "vs_main",
+                            buffers: &self.vertex_buffers,
+                        },
+                        fragment: Some(FragmentState {
+                            module: &self.shader,
+                            entry_point: "fs_main",
+                            targets: &[Some(ColorTargetState {
+                                format: self.format,
+                                blend: Some(BlendState::ALPHA_BLENDING),
+                                write_mask: ColorWrites::default(),
+                            })],
+                        }),
+                        primitive: PrimitiveState::default(),
+                        depth_stencil: depth_stencil.clone(),
+                        multisample,
+                        multiview: None,
                     }),
-                    primitive: PrimitiveState::default(),
-                    depth_stencil: depth_stencil.clone(),
-                    multisample,
-                    multiview: None,
-                }));
+                ));
 
                 self.cached_pipelines
                     .push((multisample, depth_stencil, pipeline.clone()));

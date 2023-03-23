@@ -2,23 +2,24 @@ use crate::{
     CacheKey, FontSystem, GlyphDetails, GlyphToRender, GpuCacheStatus, Params, PrepareError,
     RenderError, Resolution, SwashCache, SwashContent, TextArea, TextAtlas,
 };
+use bevy_render::render_phase::TrackedRenderPass;
 use std::{collections::HashSet, iter, mem::size_of, num::NonZeroU32, slice, sync::Arc};
 use wgpu::{
     Buffer, BufferDescriptor, BufferUsages, DepthStencilState, Device, Extent3d, ImageCopyTexture,
-    ImageDataLayout, IndexFormat, MultisampleState, Origin3d, Queue, RenderPass, RenderPipeline,
-    TextureAspect, COPY_BUFFER_ALIGNMENT,
+    ImageDataLayout, IndexFormat, MultisampleState, Origin3d, Queue, TextureAspect,
+    COPY_BUFFER_ALIGNMENT,
 };
 
 /// A text renderer that uses cached glyphs to render text into an existing render pass.
 pub struct TextRenderer {
-    vertex_buffer: Buffer,
+    vertex_buffer: bevy_render::render_resource::Buffer,
     vertex_buffer_size: u64,
-    index_buffer: Buffer,
+    index_buffer: bevy_render::render_resource::Buffer,
     index_buffer_size: u64,
     vertices_to_render: u32,
     glyphs_in_use: HashSet<CacheKey>,
     screen_resolution: Resolution,
-    pipeline: Arc<RenderPipeline>,
+    pipeline: Arc<bevy_render::render_resource::RenderPipeline>,
 }
 
 impl TextRenderer {
@@ -48,9 +49,9 @@ impl TextRenderer {
         let pipeline = atlas.get_or_create_pipeline(device, multisample, depth_stencil);
 
         Self {
-            vertex_buffer,
+            vertex_buffer: vertex_buffer.into(),
             vertex_buffer_size,
-            index_buffer,
+            index_buffer: index_buffer.into(),
             index_buffer_size,
             vertices_to_render: 0,
             glyphs_in_use: HashSet::new(),
@@ -381,7 +382,7 @@ impl TextRenderer {
                 BufferUsages::VERTEX | BufferUsages::COPY_DST,
             );
 
-            self.vertex_buffer = buffer;
+            self.vertex_buffer = buffer.into();
             self.vertex_buffer_size = buffer_size;
         }
 
@@ -405,7 +406,7 @@ impl TextRenderer {
                 BufferUsages::INDEX | BufferUsages::COPY_DST,
             );
 
-            self.index_buffer = buffer;
+            self.index_buffer = buffer.into();
             self.index_buffer_size = buffer_size;
         }
 
@@ -436,9 +437,9 @@ impl TextRenderer {
 
     /// Renders all layouts that were previously provided to `prepare`.
     pub fn render<'pass>(
-        &'pass mut self,
+        &'pass self,
         atlas: &'pass TextAtlas,
-        pass: &mut RenderPass<'pass>,
+        pass: &mut TrackedRenderPass<'pass>,
     ) -> Result<(), RenderError> {
         if self.vertices_to_render == 0 {
             return Ok(());
@@ -458,10 +459,10 @@ impl TextRenderer {
             }
         }
 
-        pass.set_pipeline(&self.pipeline);
+        pass.set_render_pipeline(&self.pipeline);
         pass.set_bind_group(0, &atlas.bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.set_index_buffer(self.index_buffer.slice(..), IndexFormat::Uint32);
+        pass.set_index_buffer(self.index_buffer.slice(..), 0, IndexFormat::Uint32);
         pass.draw_indexed(0..self.vertices_to_render, 0, 0..1);
 
         Ok(())

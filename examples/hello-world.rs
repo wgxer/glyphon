@@ -1,12 +1,13 @@
+use bevy_render::{render_phase::TrackedRenderPass, renderer::RenderDevice};
 use glyphon::{
-    Attrs, Buffer, Color, Family, FontSystem, Metrics, Resolution, SwashCache, TextArea, TextAtlas,
+    Attrs, Buffer, Color, FontSystem, Metrics, Resolution, SwashCache, TextArea, TextAtlas,
     TextBounds, TextRenderer,
 };
 use wgpu::{
-    Backends, CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Features, Instance,
+    CommandEncoderDescriptor, CompositeAlphaMode, DeviceDescriptor, Features, Instance,
     Limits, LoadOp, MultisampleState, Operations, PresentMode, RenderPassColorAttachment,
     RenderPassDescriptor, RequestAdapterOptions, SurfaceConfiguration, TextureFormat,
-    TextureUsages, TextureViewDescriptor,
+    TextureUsages, TextureViewDescriptor, InstanceDescriptor,
 };
 use winit::{
     dpi::LogicalSize,
@@ -32,7 +33,7 @@ async fn run() {
     let scale_factor = window.scale_factor();
 
     // Set up surface
-    let instance = Instance::new(Backends::all());
+    let instance = Instance::new(InstanceDescriptor::default());
     let adapter = instance
         .request_adapter(&RequestAdapterOptions::default())
         .await
@@ -48,7 +49,8 @@ async fn run() {
         )
         .await
         .unwrap();
-    let surface = unsafe { instance.create_surface(&window) };
+    let device = RenderDevice::from(device);
+    let surface = unsafe { instance.create_surface(&window).unwrap() };
     // TODO: handle srgb
     let swapchain_format = TextureFormat::Bgra8Unorm;
     let mut config = SurfaceConfiguration {
@@ -58,15 +60,16 @@ async fn run() {
         height: size.height,
         present_mode: PresentMode::Fifo,
         alpha_mode: CompositeAlphaMode::Opaque,
+        view_formats: vec![]
     };
-    surface.configure(&device, &config);
+    surface.configure(device.wgpu_device(), &config);
 
     // Set up text renderer
     let mut font_system = FontSystem::new();
     let mut cache = SwashCache::new();
-    let mut atlas = TextAtlas::new(&device, &queue, swapchain_format);
+    let mut atlas = TextAtlas::new(device.wgpu_device(), &queue, swapchain_format);
     let mut text_renderer =
-        TextRenderer::new(&mut atlas, &device, MultisampleState::default(), None);
+        TextRenderer::new(&mut atlas, device.wgpu_device(), MultisampleState::default(), None);
     let mut buffer = Buffer::new(&mut font_system, Metrics::new(30.0, 42.0));
 
     let physical_width = (width as f64 * scale_factor) as f32;
@@ -87,13 +90,13 @@ async fn run() {
             } => {
                 config.width = size.width;
                 config.height = size.height;
-                surface.configure(&device, &config);
+                surface.configure(device.wgpu_device(), &config);
                 window.request_redraw();
             }
             Event::RedrawRequested(_) => {
                 text_renderer
                     .prepare(
-                        &device,
+                        device.wgpu_device(),
                         &queue,
                         &mut font_system,
                         &mut atlas,
@@ -108,8 +111,8 @@ async fn run() {
                             bounds: TextBounds {
                                 left: 0,
                                 top: 0,
-                                right: 600,
-                                bottom: 160,
+                                right: 1000,
+                                bottom: 1000,
                             },
                             default_color: Color::rgb(255, 255, 255),
                         }],
@@ -122,7 +125,7 @@ async fn run() {
                 let mut encoder =
                     device.create_command_encoder(&CommandEncoderDescriptor { label: None });
                 {
-                    let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    let mut pass = TrackedRenderPass::new(&device, encoder.begin_render_pass(&RenderPassDescriptor {
                         label: None,
                         color_attachments: &[Some(RenderPassColorAttachment {
                             view: &view,
@@ -133,7 +136,7 @@ async fn run() {
                             },
                         })],
                         depth_stencil_attachment: None,
-                    });
+                    }));
 
                     text_renderer.render(&atlas, &mut pass).unwrap();
                 }
