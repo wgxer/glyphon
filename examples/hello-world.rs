@@ -1,3 +1,4 @@
+use bevy_render::{renderer::RenderDevice, render_phase::TrackedRenderPass};
 use glyphon::{
     Attrs, Buffer, Color, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache, TextArea,
     TextAtlas, TextBounds, TextRenderer,
@@ -48,6 +49,9 @@ async fn run() {
         )
         .await
         .unwrap();
+
+    let device = RenderDevice::from(device);
+
     let surface = unsafe { instance.create_surface(&window) }.expect("Create surface");
     let swapchain_format = TextureFormat::Bgra8UnormSrgb;
     let mut config = SurfaceConfiguration {
@@ -59,7 +63,7 @@ async fn run() {
         alpha_mode: CompositeAlphaMode::Opaque,
         view_formats: vec![],
     };
-    surface.configure(&device, &config);
+    surface.configure(&device.wgpu_device(), &config);
 
     // Set up text renderer
     let mut font_system = FontSystem::new();
@@ -87,7 +91,7 @@ async fn run() {
             } => {
                 config.width = size.width;
                 config.height = size.height;
-                surface.configure(&device, &config);
+                surface.configure(&device.wgpu_device(), &config);
                 window.request_redraw();
             }
             Event::RedrawRequested(_) => {
@@ -123,7 +127,7 @@ async fn run() {
                 let mut encoder =
                     device.create_command_encoder(&CommandEncoderDescriptor { label: None });
                 {
-                    let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    let pass = encoder.begin_render_pass(&RenderPassDescriptor {
                         label: None,
                         color_attachments: &[Some(RenderPassColorAttachment {
                             view: &view,
@@ -135,6 +139,8 @@ async fn run() {
                         })],
                         depth_stencil_attachment: None,
                     });
+
+                    let mut pass = TrackedRenderPass::new(&device, pass);
 
                     text_renderer.render(&atlas, &mut pass).unwrap();
                 }

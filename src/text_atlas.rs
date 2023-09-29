@@ -2,18 +2,19 @@ use crate::{
     text_render::ContentType, CacheKey, FontSystem, GlyphDetails, GlyphToRender, GpuCacheStatus,
     Params, Resolution, SwashCache,
 };
+use bevy_render::{renderer::RenderDevice, render_resource::{Texture, TextureView, Buffer, BindGroup, Sampler, BindGroupLayout, RenderPipeline}};
 use etagere::{size2, Allocation, BucketedAtlasAllocator};
 use lru::LruCache;
 use std::{borrow::Cow, collections::HashSet, mem::size_of, num::NonZeroU64, sync::Arc};
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry,
-    BindingResource, BindingType, BlendState, Buffer, BufferBindingType, BufferDescriptor,
-    BufferUsages, ColorTargetState, ColorWrites, DepthStencilState, Device, Extent3d, FilterMode,
+    BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry,
+    BindingResource, BindingType, BlendState, BufferBindingType, BufferDescriptor,
+    BufferUsages, ColorTargetState, ColorWrites, DepthStencilState, Extent3d, FilterMode,
     FragmentState, ImageCopyTexture, ImageDataLayout, MultisampleState, Origin3d, PipelineLayout,
-    PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor,
-    Sampler, SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, Texture, TextureAspect, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor,
+    PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipelineDescriptor,
+    SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, TextureAspect, TextureDescriptor, TextureDimension,
+    TextureFormat, TextureSampleType, TextureUsages, TextureViewDescriptor,
     TextureViewDimension, VertexFormat, VertexState,
 };
 
@@ -32,7 +33,7 @@ pub(crate) struct InnerAtlas {
 impl InnerAtlas {
     const INITIAL_SIZE: u32 = 256;
 
-    fn new(device: &Device, _queue: &Queue, kind: Kind) -> Self {
+    fn new(device: &RenderDevice, _queue: &Queue, kind: Kind) -> Self {
         let max_texture_dimension_2d = device.limits().max_texture_dimension_2d;
         let size = Self::INITIAL_SIZE.min(max_texture_dimension_2d);
 
@@ -122,7 +123,7 @@ impl InnerAtlas {
 
     pub(crate) fn grow(
         &mut self,
-        device: &wgpu::Device,
+        device: &RenderDevice,
         queue: &wgpu::Queue,
         font_system: &mut FontSystem,
         cache: &mut SwashCache,
@@ -273,13 +274,13 @@ pub struct TextAtlas {
 
 impl TextAtlas {
     /// Creates a new [`TextAtlas`].
-    pub fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self {
+    pub fn new(device: &RenderDevice, queue: &Queue, format: TextureFormat) -> Self {
         Self::with_color_mode(device, queue, format, ColorMode::Accurate)
     }
 
     /// Creates a new [`TextAtlas`] with the given [`ColorMode`].
     pub fn with_color_mode(
-        device: &Device,
+        device: &RenderDevice,
         queue: &Queue,
         format: TextureFormat,
         color_mode: ColorMode,
@@ -458,7 +459,7 @@ impl TextAtlas {
 
     pub(crate) fn grow(
         &mut self,
-        device: &wgpu::Device,
+        device: &RenderDevice,
         queue: &wgpu::Queue,
         font_system: &mut FontSystem,
         cache: &mut SwashCache,
@@ -492,7 +493,7 @@ impl TextAtlas {
 
     pub(crate) fn get_or_create_pipeline(
         &mut self,
-        device: &Device,
+        device: &RenderDevice,
         multisample: MultisampleState,
         depth_stencil: Option<DepthStencilState>,
     ) -> Arc<RenderPipeline> {
@@ -530,7 +531,7 @@ impl TextAtlas {
             })
     }
 
-    fn rebind(&mut self, device: &wgpu::Device) {
+    fn rebind(&mut self, device: &RenderDevice) {
         self.bind_group = Arc::new(device.create_bind_group(&BindGroupDescriptor {
             layout: &self.bind_group_layout,
             entries: &[

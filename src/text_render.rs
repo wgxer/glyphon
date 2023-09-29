@@ -3,9 +3,10 @@ use crate::{
     Resolution, SwashCache, SwashContent, TextArea, TextAtlas,
 };
 use std::{iter, mem::size_of, slice, sync::Arc};
+use bevy_render::{render_phase::TrackedRenderPass, render_resource::{RenderPipeline, Buffer}, renderer::RenderDevice};
 use wgpu::{
-    Buffer, BufferDescriptor, BufferUsages, DepthStencilState, Device, Extent3d, ImageCopyTexture,
-    ImageDataLayout, IndexFormat, MultisampleState, Origin3d, Queue, RenderPass, RenderPipeline,
+    BufferDescriptor, BufferUsages, DepthStencilState, Extent3d, ImageCopyTexture,
+    ImageDataLayout, IndexFormat, MultisampleState, Origin3d, Queue,
     TextureAspect, COPY_BUFFER_ALIGNMENT,
 };
 
@@ -24,7 +25,7 @@ impl TextRenderer {
     /// Creates a new `TextRenderer`.
     pub fn new(
         atlas: &mut TextAtlas,
-        device: &Device,
+        device: &RenderDevice,
         multisample: MultisampleState,
         depth_stencil: Option<DepthStencilState>,
     ) -> Self {
@@ -63,7 +64,7 @@ impl TextRenderer {
     /// Prepares all of the provided text areas for rendering.
     pub fn prepare_with_depth<'a>(
         &mut self,
-        device: &Device,
+        device: &RenderDevice,
         queue: &Queue,
         font_system: &mut FontSystem,
         atlas: &mut TextAtlas,
@@ -355,7 +356,7 @@ impl TextRenderer {
 
     pub fn prepare<'a>(
         &mut self,
-        device: &Device,
+        device: &RenderDevice,
         queue: &Queue,
         font_system: &mut FontSystem,
         atlas: &mut TextAtlas,
@@ -379,7 +380,7 @@ impl TextRenderer {
     pub fn render<'pass>(
         &'pass self,
         atlas: &'pass TextAtlas,
-        pass: &mut RenderPass<'pass>,
+        pass: &mut TrackedRenderPass<'pass>,
     ) -> Result<(), RenderError> {
         if self.vertices_to_render == 0 {
             return Ok(());
@@ -392,10 +393,10 @@ impl TextRenderer {
             }
         }
 
-        pass.set_pipeline(&self.pipeline);
+        pass.set_render_pipeline(&self.pipeline);
         pass.set_bind_group(0, &atlas.bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.set_index_buffer(self.index_buffer.slice(..), IndexFormat::Uint32);
+        pass.set_index_buffer(self.index_buffer.slice(..), 0, IndexFormat::Uint32);
         pass.draw_indexed(0..self.vertices_to_render, 0, 0..1);
 
         Ok(())
@@ -415,7 +416,7 @@ fn next_copy_buffer_size(size: u64) -> u64 {
 }
 
 fn create_oversized_buffer(
-    device: &Device,
+    device: &RenderDevice,
     label: Option<&str>,
     contents: &[u8],
     usage: BufferUsages,

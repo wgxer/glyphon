@@ -12,6 +12,7 @@ wgpu = "0.16"
 etagere = "0.2.8"
 cosmic-text = "0.9"
 lru = "0.11"
+bevy_render = "0.11.3"
 
 [dev-dependencies]
 winit = "0.27.0"
